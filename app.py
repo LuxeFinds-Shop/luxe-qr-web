@@ -5,15 +5,15 @@ from barcode.writer import ImageWriter
 import datetime
 import random
 import string
+from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-# Dummy-Speicher für die Detail-Seite (in Produktion wäre das eine Datenbank)
+# Temporärer Speicher für SN → Infos (später echte DB)
 details = {}
 
 def generate_serial_number():
-    """Erzeugt eine 20-stellige numerische Seriennummer"""
-    return ''.join(random.choices(string.digits, k=20))
+    return ''.join(random.choices(string.digits, k=20))  # 20-stellige reine Zahl
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -27,14 +27,13 @@ def index():
                 price_float = float(price)
                 nicotine_int = int(float(nicotine))
 
-                # Seriennummer generieren
                 sn = generate_serial_number()
 
-                # Daten, die im Barcode kodiert werden → URL + SN
+                # Barcode-Inhalt = Link zur Detail-Seite
                 base_url = request.host_url.rstrip('/')
                 barcode_data = f"{base_url}/detail?sn={sn}"
 
-                # Zusätzliche Infos speichern (für die Detail-Seite)
+                # Infos speichern
                 details[sn] = {
                     'product': product,
                     'price': price_float,
@@ -42,57 +41,50 @@ def index():
                     'date': datetime.date.today().strftime('%d.%m.%Y')
                 }
 
-                # Code128 Barcode erstellen
+                # Code128 erzeugen – dick & breit
                 code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
 
-                # Optionen → größerer, breiterer Barcode (nicht so lang)
                 options = {
-                    'write_text': False,           # Kein Text direkt unter den Bars (wir machen es selbst)
-                    'module_width': 0.6,           # Dickere Balken → Barcode wird breiter & kürzer
-                    'dpi': 350,
-                    'quiet_zone': 12,
-                    'font_size': 0,                # Kein Font (wir setzen Text manuell)
+                    'write_text': False,           # Kein autom. Text unter Bars
+                    'module_width': 0.65,          # Dickere Balken → Barcode wird breiter & kürzer
+                    'module_height': 12.0,         # Höhe nicht übertrieben
+                    'dpi': 400,
+                    'quiet_zone': 10,
                 }
 
-                # Barcode als Bild generieren
-                barcode_img_buf = io.BytesIO()
-                code128.write(barcode_img_buf, options=options)
-                barcode_img_buf.seek(0)
+                buf = io.BytesIO()
+                code128.write(buf, options=options)
+                buf.seek(0)
 
-                # Neues Bild erstellen: Barcode + Seriennummer + generierter Text unten
-                from PIL import Image, ImageDraw, ImageFont
-                barcode_img = Image.open(barcode_img_buf).convert('RGB')
-
-                # Größe des neuen Bildes (Barcode + Platz für Text unten)
-                total_height = barcode_img.height + 140  # Mehr Platz unten
+                # PIL Bild laden & erweitern für Text unten
+                barcode_img = Image.open(buf).convert('RGB')
+                total_height = barcode_img.height + 180
                 new_img = Image.new('RGB', (barcode_img.width, total_height), (255, 255, 255))
                 draw = ImageDraw.Draw(new_img)
+                new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 30))
 
-                # Barcode einfügen (zentriert)
-                new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 20))
-
-                # Seriennummer + Text darunter schreiben
+                # Schrift laden (Fallback)
                 try:
-                    font = ImageFont.truetype("arial.ttf", 28)
+                    font = ImageFont.truetype("arial.ttf", 32)  # Größer für bessere Lesbarkeit
                 except:
                     font = ImageFont.load_default()
 
-                # Haupttext unter Barcode
-                text_lines = [
+                # Textzeilen zentriert darunter
+                lines = [
                     f"LuxeFinds | {product}",
                     f"CHF {price_float:.2f} | {nicotine_int} mg/ml",
-                    f"Datum: {datetime.date.today().strftime('%d.%m.%Y')}",
+                    f"Datum: {details[sn]['date']}",
                     f"SN: {sn}"
                 ]
 
-                y_pos = barcode_img.height + 30
-                for line in text_lines:
+                y = barcode_img.height + 50
+                for line in lines:
                     bbox = draw.textbbox((0, 0), line, font=font)
-                    text_width = bbox[2] - bbox[0]
-                    draw.text(((new_img.width - text_width) // 2, y_pos), line, fill=(0, 0, 0), font=font)
-                    y_pos += 36  # Zeilenabstand
+                    w = bbox[2] - bbox[0]
+                    draw.text(((new_img.width - w) // 2, y), line, fill=(0, 0, 0), font=font)
+                    y += 45
 
-                # In Memory speichern und zurückgeben
+                # Finales Bild in Buffer
                 final_buf = io.BytesIO()
                 new_img.save(final_buf, format='PNG')
                 final_buf.seek(0)
@@ -101,13 +93,13 @@ def index():
                     final_buf,
                     mimetype='image/png',
                     as_attachment=True,
-                    download_name=f'luxe_barcode_{product.replace(" ", "_")[:30]}_{nicotine}mg.png'
+                    download_name=f'luxe_barcode_{product.replace(" ", "_")[:25]}_{nicotine}mg.png'
                 )
 
             except Exception as e:
-                return f"Fehler beim Generieren: {str(e)}", 500
+                return f"Fehler: {str(e)} – Daten prüfen.", 500
 
-    # HTML-Formular
+    # Startseite – Formular
     return """
 <!DOCTYPE html>
 <html lang="de">
@@ -116,18 +108,18 @@ def index():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LuxeFinds Barcode Generator</title>
     <style>
-        body { font-family: system-ui, sans-serif; background:#f8fafc; padding:20px; max-width:500px; margin:auto; }
+        body { font-family:system-ui,sans-serif; background:#f8fafc; padding:20px; max-width:500px; margin:auto; }
         h1 { color:#6366f1; text-align:center; }
-        label { display:block; margin:12px 0 4px; font-weight:bold; }
-        input { width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; }
-        button { width:100%; background:#6366f1; color:white; border:none; padding:14px; font-size:1.1rem; border-radius:8px; margin-top:16px; cursor:pointer; }
+        label { display:block; margin:14px 0 6px; font-weight:bold; }
+        input { width:100%; padding:12px; border:1px solid #cbd5e1; border-radius:10px; font-size:1rem; }
+        button { width:100%; background:#6366f1; color:white; border:none; padding:16px; font-size:1.1rem; border-radius:10px; margin-top:20px; cursor:pointer; }
         button:hover { background:#4f46e5; }
-        .hint { color:#64748b; font-size:0.9rem; margin-top:16px; text-align:center; }
+        .hint { color:#64748b; font-size:0.95rem; text-align:center; margin-top:20px; }
     </style>
 </head>
 <body>
     <h1>LuxeFinds Barcode Generator</h1>
-    <p class="hint">Erzeugt einen dicken Code128-Barcode mit Seriennummer.<br>Scan → öffnet Detail-Seite mit allen Infos.</p>
+    <p class="hint">Erzeugt dicken Code128-Barcode mit Seriennummer.<br>Scannen → öffnet Detail-Seite mit Produkt-Infos.</p>
     
     <form method="post">
         <label>Produktname</label>
@@ -149,7 +141,7 @@ def index():
 def detail():
     sn = request.args.get('sn')
     if not sn or sn not in details:
-        return "Seriennummer nicht gefunden oder abgelaufen.", 404
+        return "<h2>Seriennummer nicht gefunden.</h2>", 404
 
     info = details[sn]
     return render_template_string("""
@@ -158,13 +150,18 @@ def detail():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Produktdetail - LuxeFinds</title>
+        <title>LuxeFinds – Produktdetail</title>
         <style>
-            body { font-family: system-ui, sans-serif; background:#f8fafc; padding:30px; max-width:600px; margin:auto; text-align:center; }
+            body { font-family:system-ui,sans-serif; background:#f8fafc; padding:30px; text-align:center; }
             h1 { color:#6366f1; }
-            .card { background:white; padding:24px; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.1); margin-top:20px; }
-            .label { font-weight:bold; color:#1e293b; margin-top:12px; }
-            .value { font-size:1.3rem; color:#6366f1; }
+            .card { background:white; max-width:500px; margin:30px auto; padding:25px; border-radius:16px; box-shadow:0 8px 25px rgba(0,0,0,0.12); }
+            .label { font-weight:bold; color:#1e293b; margin:12px 0 4px; font-size:1.1rem; }
+            .value { font-size:1.4rem; color:#6366f1; margin-bottom:16px; }
+            .buttons { margin-top:30px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
+            .btn { padding:14px 28px; font-size:1.1rem; border-radius:10px; cursor:pointer; text-decoration:none; color:white; }
+            .add { background:#10b981; }
+            .sell { background:#ef4444; }
+            .btn:hover { opacity:0.9; }
         </style>
     </head>
     <body>
@@ -172,19 +169,25 @@ def detail():
         <div class="card">
             <div class="label">Produkt</div>
             <div class="value">{{ product }}</div>
-            
+
             <div class="label">Preis</div>
             <div class="value">CHF {{ "%.2f"|format(price) }}</div>
-            
+
             <div class="label">Nikotin</div>
             <div class="value">{{ nicotine }} mg/ml</div>
-            
+
             <div class="label">Generiert am</div>
             <div class="value">{{ date }}</div>
-            
+
             <div class="label">Seriennummer</div>
             <div class="value">{{ sn }}</div>
+
+            <div class="buttons">
+                <a href="#" class="btn add">Zum Lager hinzufügen</a>
+                <a href="#" class="btn sell">Als verkauft markieren</a>
+            </div>
         </div>
+        <p style="color:#64748b; margin-top:40px;">(Buttons werden später mit deinem Lager-System verbunden)</p>
     </body>
     </html>
     """, product=info['product'], price=info['price'], nicotine=info['nicotine'], date=info['date'], sn=sn)
