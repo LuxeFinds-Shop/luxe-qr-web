@@ -9,19 +9,20 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
+# Speicher (später Datenbank möglich)
 details = {}
 
 def generate_serial_number():
-    # kürzere SN → kürzerer Barcode
+    # kurze Seriennummer = kurzer Barcode
     return ''.join(random.choices(string.digits, k=10))
 
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def index():
-    if request.method == 'POST':
-        product = request.form.get('product', '').strip()
-        price   = request.form.get('price', '').strip()
-        nicotine = request.form.get('nicotine', '').strip()
+    if request.method == "POST":
+        product = request.form.get("product", "").strip()
+        price = request.form.get("price", "").strip()
+        nicotine = request.form.get("nicotine", "").strip()
 
         if product and price and nicotine:
             try:
@@ -30,145 +31,229 @@ def index():
 
                 sn = generate_serial_number()
 
-                # WICHTIG: nur Seriennummer im Barcode
+                # nur Seriennummer codieren
                 barcode_data = sn
 
                 details[sn] = {
-                    'product': product,
-                    'price': price_float,
-                    'nicotine': nicotine_int,
-                    'date': datetime.date.today().strftime('%d.%m.%Y')
+                    "product": product,
+                    "price": price_float,
+                    "nicotine": nicotine_int,
+                    "date": datetime.date.today().strftime("%d.%m.%Y")
                 }
 
-                code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
+                code128 = barcode.get("code128", barcode_data, writer=ImageWriter())
 
                 options = {
-                    'write_text': False,
-                    'module_width': 0.6,   # schmaler → kürzer
-                    'module_height': 6.0,
-                    'dpi': 300,
-                    'quiet_zone': 6,
+                    "write_text": False,
+                    "module_width": 0.5,
+                    "module_height": 8,
+                    "quiet_zone": 4,
+                    "dpi": 300,
                 }
 
                 buf = io.BytesIO()
                 code128.write(buf, options=options)
                 buf.seek(0)
 
-                barcode_img = Image.open(buf).convert('RGB')
+                barcode_img = Image.open(buf).convert("RGB")
 
-                total_height = barcode_img.height + 100
-                new_img = Image.new('RGB', (barcode_img.width, total_height), (255, 255, 255))
+                total_height = barcode_img.height + 80
+                new_img = Image.new("RGB", (barcode_img.width, total_height), (255, 255, 255))
                 draw = ImageDraw.Draw(new_img)
-                new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 10))
+                new_img.paste(barcode_img, (0, 10))
 
                 try:
-                    font = ImageFont.truetype("arial.ttf", 42)
+                    font = ImageFont.truetype("arial.ttf", 36)
                 except:
                     font = ImageFont.load_default()
 
-                sn_text = sn
-                bbox = draw.textbbox((0, 0), sn_text, font=font)
+                bbox = draw.textbbox((0, 0), sn, font=font)
                 w = bbox[2] - bbox[0]
-                draw.text(((new_img.width - w) // 2, barcode_img.height + 20), sn_text, fill=(0, 0, 0), font=font)
+
+                draw.text(
+                    ((new_img.width - w) // 2, barcode_img.height + 20),
+                    sn,
+                    fill=(0, 0, 0),
+                    font=font
+                )
 
                 final_buf = io.BytesIO()
-                new_img.save(final_buf, format='PNG')
+                new_img.save(final_buf, format="PNG")
                 final_buf.seek(0)
 
                 return send_file(
                     final_buf,
-                    mimetype='image/png',
+                    mimetype="image/png",
                     as_attachment=True,
-                    download_name=f'luxe_{product.replace(" ", "_")[:15]}_{nicotine}mg.png'
+                    download_name=f"barcode_{sn}.png"
                 )
 
             except Exception as e:
-                return f"Fehler: {str(e)} – bitte Daten prüfen.", 500
+                return f"Fehler: {str(e)}", 500
 
 
-    # ORIGINAL DESIGN
     return """
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LuxeFinds Barcode</title>
-    <style>
-        body { font-family:system-ui,sans-serif; background:#f8fafc; padding:20px; max-width:480px; margin:auto; }
-        h1 { color:#6366f1; text-align:center; margin-bottom:20px; }
-        label { display:block; margin:16px 0 6px; font-weight:600; }
-        input { width:100%; padding:14px; border:1px solid #cbd5e1; border-radius:12px; font-size:1.05rem; }
-        button { width:100%; background:#6366f1; color:white; border:none; padding:16px; font-size:1.15rem; border-radius:12px; margin-top:24px; cursor:pointer; }
-        button:hover { background:#4f46e5; }
-        .hint { color:#64748b; text-align:center; margin-top:24px; font-size:0.95rem; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LuxeFinds System</title>
+
+<style>
+body {
+    font-family: system-ui, sans-serif;
+    background: #f1f5f9;
+    padding: 20px;
+}
+
+.container {
+    max-width: 500px;
+    margin: auto;
+}
+
+.header {
+    font-size: 28px;
+    font-weight: 700;
+    color: #4f46e5;
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.card {
+    background: white;
+    padding: 25px;
+    border-radius: 14px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+
+label {
+    font-weight: 600;
+    display: block;
+    margin-top: 15px;
+}
+
+input {
+    width: 100%;
+    padding: 14px;
+    margin-top: 6px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 1rem;
+}
+
+button {
+    width: 100%;
+    margin-top: 20px;
+    padding: 15px;
+    background: #6366f1;
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #4f46e5;
+}
+
+.footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 20px;
+    font-size: 0.9rem;
+}
+</style>
 </head>
+
 <body>
-    <h1>LuxeFinds Barcode Generator</h1>
-    <p class="hint">Kurzer, dicker Barcode mit Seriennummer unten.<br>Scannen → zeigt Infos + Lager-Optionen.</p>
-    
-    <form method="post">
-        <label>Produktname</label>
-        <input name="product" required placeholder="z.B. Mango Ice">
+<div class="container">
+    <div class="header">LuxeFinds Barcode System</div>
 
-        <label>Preis (CHF)</label>
-        <input name="price" type="number" step="0.01" required placeholder="19.90">
+    <div class="card">
+        <form method="post">
 
-        <label>Nikotin (mg/ml)</label>
-        <input name="nicotine" type="number" required placeholder="20">
+            <label>Produktname</label>
+            <input name="product" placeholder="z.B. Mango Ice" required>
 
-        <button type="submit">Barcode generieren</button>
-    </form>
+            <label>Preis (CHF)</label>
+            <input name="price" type="number" step="0.01" required>
+
+            <label>Nikotin (mg/ml)</label>
+            <input name="nicotine" type="number" required>
+
+            <button type="submit">Barcode generieren</button>
+        </form>
+    </div>
+
+    <div class="footer">
+        Scan → Detailseite anzeigen
+    </div>
+</div>
 </body>
 </html>
     """
 
 
-@app.route('/detail')
+@app.route("/detail")
 def detail():
-    sn = request.args.get('sn')
+    sn = request.args.get("sn")
+
     if not sn or sn not in details:
-        return "<h2>Code nicht gefunden.</h2>", 404
+        return "<h2>Code nicht gefunden</h2>"
 
     info = details[sn]
+
     return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="de">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>LuxeFinds Detail</title>
-        <style>
-            body { font-family:system-ui,sans-serif; background:#f8fafc; padding:30px; text-align:center; }
-            h1 { color:#6366f1; margin-bottom:30px; }
-            .card { background:white; max-width:500px; margin:auto; padding:30px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
-            .label { font-weight:600; color:#1e293b; margin:16px 0 6px; font-size:1.2rem; }
-            .value { font-size:1.5rem; color:#6366f1; margin-bottom:20px; }
-        </style>
-    </head>
-    <body>
-        <h1>LuxeFinds Vape</h1>
-        <div class="card">
-            <div class="label">Produkt</div>
-            <div class="value">{{ product }}</div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body {
+    font-family: system-ui, sans-serif;
+    background: #f1f5f9;
+    padding: 30px;
+}
 
-            <div class="label">Preis</div>
-            <div class="value">CHF {{ "%.2f"|format(price) }}</div>
+.card {
+    max-width: 500px;
+    margin: auto;
+    background: white;
+    padding: 30px;
+    border-radius: 14px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    text-align: center;
+}
 
-            <div class="label">Nikotin</div>
-            <div class="value">{{ nicotine }} mg/ml</div>
+.title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #4f46e5;
+    margin-bottom: 20px;
+}
 
-            <div class="label">Generiert</div>
-            <div class="value">{{ date }}</div>
+.value {
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+</style>
+</head>
 
-            <div class="label">Seriennummer</div>
-            <div class="value">{{ sn }}</div>
-        </div>
-    </body>
-    </html>
-    """, product=info['product'], price=info['price'], nicotine=info['nicotine'], date=info['date'], sn=sn)
+<body>
+<div class="card">
+    <div class="title">{{ product }}</div>
+    <div class="value">Preis: CHF {{ price }}</div>
+    <div class="value">Nikotin: {{ nicotine }} mg/ml</div>
+    <div class="value">Datum: {{ date }}</div>
+    <div class="value">SN: {{ sn }}</div>
+</div>
+</body>
+</html>
+    """, product=info["product"], price=info["price"],
+       nicotine=info["nicotine"], date=info["date"], sn=sn)
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
