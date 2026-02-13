@@ -1,3 +1,4 @@
 flask
-qrcode[pil]
+python-barcode
+pillow  # wird von python-barcode für ImageWriter benötigt
 gunicorn
