@@ -14,26 +14,17 @@ details = {}
 
 WEBHOOK = "https://discord.com/api/webhooks/1466869469543530528/p38DSMKoMNJAG5m9YjMS1WZFvZfe5x6oFSjlI-rAKUUgZw6k8Z9f-jiDcOn4I0n_0JGx"
 
+
 def generate_serial_number():
-    return ''.join(random.choices(string.digits, k=10))
+    return ''.join(random.choices(string.digits, k=8))
 
 
-def send_to_discord(image_bytes, sn, product, price, nicotine):
+def send_to_discord(image_bytes):
     try:
         files = {
             "file": ("barcode.png", image_bytes, "image/png")
         }
-
-        data = {
-            "content": f"📦 Neuer Barcode erstellt\n"
-                       f"Produkt: {product}\n"
-                       f"Preis: CHF {price}\n"
-                       f"Nikotin: {nicotine} mg\n"
-                       f"SN: {sn}"
-        }
-
-        requests.post(WEBHOOK, data=data, files=files)
-
+        requests.post(WEBHOOK, files=files)
     except Exception as e:
         print("Discord Fehler:", e)
 
@@ -52,8 +43,6 @@ def index():
 
                 sn = generate_serial_number()
 
-                barcode_data = sn
-
                 details[sn] = {
                     'product': product,
                     'price': price_float,
@@ -61,11 +50,15 @@ def index():
                     'date': datetime.date.today().strftime('%d.%m.%Y')
                 }
 
+                # URL im Barcode
+                base_url = request.host_url.rstrip('/')
+                barcode_data = f"{base_url}/detail?sn={sn}"
+
                 code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
 
                 options = {
                     'write_text': False,
-                    'module_width': 0.5,
+                    'module_width': 0.4,
                     'module_height': 8,
                     'quiet_zone': 4,
                     'dpi': 300,
@@ -83,7 +76,7 @@ def index():
                 new_img.paste(barcode_img, (0, 10))
 
                 try:
-                    font = ImageFont.truetype("arial.ttf", 36)
+                    font = ImageFont.truetype("arial.ttf", 32)
                 except:
                     font = ImageFont.load_default()
 
@@ -101,8 +94,8 @@ def index():
                 new_img.save(final_buf, format='PNG')
                 final_buf.seek(0)
 
-                # Discord senden
-                send_to_discord(final_buf.getvalue(), sn, product, price_float, nicotine_int)
+                # an Discord senden
+                send_to_discord(final_buf.getvalue())
                 final_buf.seek(0)
 
                 return send_file(
@@ -133,13 +126,13 @@ label { font-weight:600; display:block; margin-top:15px; }
 input { width:100%; padding:14px; margin-top:6px; border-radius:10px; border:1px solid #cbd5e1; font-size:1rem; }
 button { width:100%; margin-top:20px; padding:15px; background:#6366f1; border:none; border-radius:12px; color:white; font-size:1.1rem; cursor:pointer; }
 button:hover { background:#4f46e5; }
-.footer { text-align:center; color:#64748b; margin-top:20px; font-size:0.9rem; }
 </style>
 </head>
 
 <body>
 <div class="container">
 <div class="header">LuxeFinds Barcode System</div>
+
 <div class="card">
 <form method="post">
 
@@ -156,15 +149,54 @@ button:hover { background:#4f46e5; }
 
 </form>
 </div>
-
-<div class="footer">
-Scan → Detailseite anzeigen
-</div>
-
 </div>
 </body>
 </html>
     """
+
+
+@app.route('/detail')
+def detail():
+    sn = request.args.get('sn')
+
+    if not sn or sn not in details:
+        return "<h2>Code nicht gefunden</h2>"
+
+    info = details[sn]
+
+    return render_template_string("""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { font-family:system-ui; background:#f1f5f9; padding:30px; }
+.card {
+max-width:500px;
+margin:auto;
+background:white;
+padding:30px;
+border-radius:14px;
+box-shadow:0 8px 25px rgba(0,0,0,0.08);
+text-align:center;
+}
+.title { font-size:24px; font-weight:700; color:#4f46e5; margin-bottom:20px; }
+.value { font-size:20px; margin-bottom:15px; }
+</style>
+</head>
+
+<body>
+<div class="card">
+<div class="title">{{ product }}</div>
+<div class="value">Preis: CHF {{ price }}</div>
+<div class="value">Nikotin: {{ nicotine }} mg/ml</div>
+<div class="value">Datum: {{ date }}</div>
+<div class="value">SN: {{ sn }}</div>
+</div>
+</body>
+</html>
+    """, product=info['product'], price=info['price'],
+       nicotine=info['nicotine'], date=info['date'], sn=sn)
 
 
 if __name__ == '__main__':
