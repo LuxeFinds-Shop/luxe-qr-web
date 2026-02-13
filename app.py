@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-# Temporärer Speicher für SN → Infos
+# Temporärer Speicher für SN → Infos (später echte DB)
 details = {}
 
 def generate_serial_number():
@@ -41,40 +41,42 @@ def index():
                     'date': datetime.date.today().strftime('%d.%m.%Y')
                 }
 
-                # Code128 – SEHR KURZ & DICK
+                # Code128 – extrem kurz & dick (wie ISBN-Beispiele)
                 code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
 
                 options = {
-                    'write_text': False,           # Kein Text unter Bars
-                    'module_width': 1.0,           # Extrem dicke Balken → Barcode wird sehr kurz
-                    'module_height': 8.0,          # Niedrige Höhe (wie auf deinem Bild)
+                    'write_text': False,           # Kein automatischer Text unter Bars
+                    'module_width': 1.2,           # Sehr dicke Balken → Barcode extrem kurz
+                    'module_height': 6.0,          # Niedrige Höhe (wie auf deinen Bildern)
                     'dpi': 500,                    # Scharf
-                    'quiet_zone': 20,              # Mehr Rand links/rechts
+                    'quiet_zone': 18,              # Rand links/rechts
                 }
 
                 buf = io.BytesIO()
                 code128.write(buf, options=options)
                 buf.seek(0)
 
-                # PIL Bild laden & erweitern (nur für SN)
+                # PIL Bild laden
                 barcode_img = Image.open(buf).convert('RGB')
+
+                # Gesamtbild: Barcode + nur Platz für SN unten
                 total_height = barcode_img.height + 100
                 new_img = Image.new('RGB', (barcode_img.width, total_height), (255, 255, 255))
                 draw = ImageDraw.Draw(new_img)
                 new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 10))
 
-                # Große Schrift für SN
+                # Große Schrift nur für SN
                 try:
-                    font = ImageFont.truetype("arial.ttf", 48)  # Groß & fett
+                    font = ImageFont.truetype("arial.ttf", 42)  # Groß & klar
                 except:
                     font = ImageFont.load_default()
 
-                sn_text = sn  # Nur die Nummer, ohne "SN:"
+                sn_text = sn  # Nur die reine Nummer
                 bbox = draw.textbbox((0, 0), sn_text, font=font)
                 w = bbox[2] - bbox[0]
                 draw.text(((new_img.width - w) // 2, barcode_img.height + 20), sn_text, fill=(0, 0, 0), font=font)
 
-                # Finales Bild
+                # Finales Bild speichern
                 final_buf = io.BytesIO()
                 new_img.save(final_buf, format='PNG')
                 final_buf.seek(0)
@@ -87,9 +89,9 @@ def index():
                 )
 
             except Exception as e:
-                return f"Fehler: {str(e)}", 500
+                return f"Fehler: {str(e)} – bitte Daten prüfen.", 500
 
-    # Startseite – Formular (angepasst)
+    # Startseite – Formular
     return """
 <!DOCTYPE html>
 <html lang="de">
