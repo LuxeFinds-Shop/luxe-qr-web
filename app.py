@@ -10,7 +10,7 @@ import requests
 
 app = Flask(__name__)
 
-WEBHOOK = "DEIN_WEBHOOK_HIER"
+WEBHOOK = "https://discord.com/api/webhooks/1466869469543530528/p38DSMKoMNJAG5m9YjMS1WZFvZfe5x6oFSjlI-rAKUUgZw6k8Z9f-jiDcOn4I0n_0JGx"
 
 DB = "database.db"
 
@@ -20,13 +20,13 @@ def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
-    CREATE TABLE IF NOT EXISTS products (
-        sn TEXT PRIMARY KEY,
-        product TEXT,
-        price REAL,
-        nicotine INTEGER,
-        date TEXT
-    )
+        CREATE TABLE IF NOT EXISTS products (
+            sn TEXT PRIMARY KEY,
+            product TEXT,
+            price TEXT,
+            nicotine TEXT,
+            date TEXT
+        )
     """)
     conn.commit()
     conn.close()
@@ -36,7 +36,7 @@ init_db()
 
 
 def generate_serial_number():
-    return str(random.randint(100000, 999999))  # 6-stellig → sehr kurzer Barcode
+    return str(random.randint(100000, 999999))  # 6-stellig
 
 
 def save_product(sn, product, price, nicotine):
@@ -70,23 +70,22 @@ def send_to_discord(image_bytes):
 def index():
     if request.method == "POST":
         product = request.form.get("product")
-        price = float(request.form.get("price"))
-        nicotine = int(request.form.get("nicotine"))
+        price = request.form.get("price")
+        nicotine = request.form.get("nicotine")
 
         sn = generate_serial_number()
 
         save_product(sn, product, price, nicotine)
 
-        # Barcode enthält nur SN
         barcode_data = sn
 
         code128 = barcode.get("code128", barcode_data, writer=ImageWriter())
 
         options = {
             "write_text": False,
-            "module_width": 0.4,
-            "module_height": 8,
-            "quiet_zone": 3,
+            "module_width": 0.8,
+            "module_height": 40,
+            "quiet_zone": 10,
             "dpi": 300,
         }
 
@@ -99,14 +98,15 @@ def index():
         total_height = barcode_img.height + 60
         new_img = Image.new("RGB", (barcode_img.width, total_height), (255, 255, 255))
         draw = ImageDraw.Draw(new_img)
+
         new_img.paste(barcode_img, (0, 0))
 
         try:
-            font = ImageFont.truetype("arial.ttf", 28)
+            font = ImageFont.truetype("arial.ttf", 30)
         except:
             font = ImageFont.load_default()
 
-        draw.text((10, barcode_img.height + 10), sn, fill=(0, 0, 0), font=font)
+        draw.text((20, barcode_img.height + 10), sn, fill=(0, 0, 0), font=font)
 
         final_buf = io.BytesIO()
         new_img.save(final_buf, format="PNG")
