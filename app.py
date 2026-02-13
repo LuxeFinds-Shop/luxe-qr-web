@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, render_template_string
+from flask import Flask, request, send_file, render_template_string, redirect
 import io
 import barcode
 from barcode.writer import ImageWriter
@@ -10,13 +10,17 @@ import requests
 
 app = Flask(__name__)
 
+# Speicher (ohne Datenbank)
 details = {}
 
+# Discord Webhook
 WEBHOOK = "https://discord.com/api/webhooks/1466869469543530528/p38DSMKoMNJAG5m9YjMS1WZFvZfe5x6oFSjlI-rAKUUgZw6k8Z9f-jiDcOn4I0n_0JGx"
 
 
 def generate_serial_number():
-    return ''.join(random.choices(string.digits, k=8))
+    # kurze Codes wie A7F2K91
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=7))
 
 
 def send_to_discord(image_bytes):
@@ -33,7 +37,7 @@ def send_to_discord(image_bytes):
 def index():
     if request.method == 'POST':
         product = request.form.get('product', '').strip()
-        price   = request.form.get('price', '').strip()
+        price = request.form.get('price', '').strip()
         nicotine = request.form.get('nicotine', '').strip()
 
         if product and price and nicotine:
@@ -50,15 +54,15 @@ def index():
                     'date': datetime.date.today().strftime('%d.%m.%Y')
                 }
 
-                # URL im Barcode
+                # kurzer Link im Barcode
                 base_url = request.host_url.rstrip('/')
-                barcode_data = f"{base_url}/detail?sn={sn}"
+                barcode_data = f"{base_url}/s/{sn}"
 
                 code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
 
                 options = {
                     'write_text': False,
-                    'module_width': 0.4,
+                    'module_width': 0.45,
                     'module_height': 8,
                     'quiet_zone': 4,
                     'dpi': 300,
@@ -70,13 +74,13 @@ def index():
 
                 barcode_img = Image.open(buf).convert('RGB')
 
-                total_height = barcode_img.height + 80
+                total_height = barcode_img.height + 70
                 new_img = Image.new('RGB', (barcode_img.width, total_height), (255, 255, 255))
                 draw = ImageDraw.Draw(new_img)
                 new_img.paste(barcode_img, (0, 10))
 
                 try:
-                    font = ImageFont.truetype("arial.ttf", 32)
+                    font = ImageFont.truetype("arial.ttf", 30)
                 except:
                     font = ImageFont.load_default()
 
@@ -84,7 +88,7 @@ def index():
                 w = bbox[2] - bbox[0]
 
                 draw.text(
-                    ((new_img.width - w) // 2, barcode_img.height + 20),
+                    ((new_img.width - w) // 2, barcode_img.height + 15),
                     sn,
                     fill=(0, 0, 0),
                     font=font
@@ -94,7 +98,7 @@ def index():
                 new_img.save(final_buf, format='PNG')
                 final_buf.seek(0)
 
-                # an Discord senden
+                # Discord senden
                 send_to_discord(final_buf.getvalue())
                 final_buf.seek(0)
 
@@ -108,34 +112,28 @@ def index():
             except Exception as e:
                 return f"Fehler: {str(e)}", 500
 
-
     return """
 <!DOCTYPE html>
 <html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LuxeFinds System</title>
+<title>LuxeFinds Barcode</title>
 
 <style>
-body { font-family:system-ui; background:#f1f5f9; padding:20px; }
-.container { max-width:500px; margin:auto; }
-.header { font-size:28px; font-weight:700; color:#4f46e5; text-align:center; margin-bottom:25px; }
-.card { background:white; padding:25px; border-radius:14px; box-shadow:0 8px 25px rgba(0,0,0,0.08); }
-label { font-weight:600; display:block; margin-top:15px; }
-input { width:100%; padding:14px; margin-top:6px; border-radius:10px; border:1px solid #cbd5e1; font-size:1rem; }
-button { width:100%; margin-top:20px; padding:15px; background:#6366f1; border:none; border-radius:12px; color:white; font-size:1.1rem; cursor:pointer; }
+body { font-family:system-ui,sans-serif; background:#f8fafc; padding:20px; max-width:480px; margin:auto; }
+h1 { color:#6366f1; text-align:center; margin-bottom:20px; }
+label { display:block; margin:16px 0 6px; font-weight:600; }
+input { width:100%; padding:14px; border:1px solid #cbd5e1; border-radius:12px; font-size:1.05rem; }
+button { width:100%; background:#6366f1; color:white; border:none; padding:16px; font-size:1.15rem; border-radius:12px; margin-top:24px; cursor:pointer; }
 button:hover { background:#4f46e5; }
 </style>
 </head>
 
 <body>
-<div class="container">
-<div class="header">LuxeFinds Barcode System</div>
+<h1>LuxeFinds Barcode Generator</h1>
 
-<div class="card">
 <form method="post">
-
 <label>Produktname</label>
 <input name="product" required>
 
@@ -146,13 +144,16 @@ button:hover { background:#4f46e5; }
 <input name="nicotine" type="number" required>
 
 <button type="submit">Barcode generieren</button>
-
 </form>
-</div>
-</div>
+
 </body>
 </html>
     """
+
+
+@app.route('/s/<sn>')
+def scan_redirect(sn):
+    return redirect(f"/detail?sn={sn}")
 
 
 @app.route('/detail')
@@ -160,7 +161,7 @@ def detail():
     sn = request.args.get('sn')
 
     if not sn or sn not in details:
-        return "<h2>Code nicht gefunden</h2>"
+        return "<h2>Code nicht gefunden.</h2>", 404
 
     info = details[sn]
 
@@ -170,24 +171,15 @@ def detail():
 <head>
 <meta charset="UTF-8">
 <style>
-body { font-family:system-ui; background:#f1f5f9; padding:30px; }
-.card {
-max-width:500px;
-margin:auto;
-background:white;
-padding:30px;
-border-radius:14px;
-box-shadow:0 8px 25px rgba(0,0,0,0.08);
-text-align:center;
-}
-.title { font-size:24px; font-weight:700; color:#4f46e5; margin-bottom:20px; }
-.value { font-size:20px; margin-bottom:15px; }
+body { font-family:system-ui,sans-serif; background:#f8fafc; padding:30px; text-align:center; }
+.card { background:white; max-width:500px; margin:auto; padding:30px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
+.value { font-size:1.4rem; margin:12px 0; }
 </style>
 </head>
 
 <body>
 <div class="card">
-<div class="title">{{ product }}</div>
+<h2>{{ product }}</h2>
 <div class="value">Preis: CHF {{ price }}</div>
 <div class="value">Nikotin: {{ nicotine }} mg/ml</div>
 <div class="value">Datum: {{ date }}</div>
