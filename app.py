@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-# Temporärer Speicher (später echte DB)
+# Temporärer Speicher für SN → Infos
 details = {}
 
 def generate_serial_number():
@@ -41,39 +41,38 @@ def index():
                     'date': datetime.date.today().strftime('%d.%m.%Y')
                 }
 
-                # Code128 – extrem kurz & dick
+                # Code128 – SEHR KURZ & DICK
                 code128 = barcode.get('code128', barcode_data, writer=ImageWriter())
 
                 options = {
-                    'write_text': False,           # Kein Text unter den Balken
-                    'module_width': 0.8,           # Sehr dicke Balken → Barcode wird extrem breit/kurz
-                    'module_height': 10.0,         # Nicht zu hoch
-                    'dpi': 450,
-                    'quiet_zone': 15,              # Mehr Rand links/rechts
+                    'write_text': False,           # Kein Text unter Bars
+                    'module_width': 1.0,           # Extrem dicke Balken → Barcode wird sehr kurz
+                    'module_height': 8.0,          # Niedrige Höhe (wie auf deinem Bild)
+                    'dpi': 500,                    # Scharf
+                    'quiet_zone': 20,              # Mehr Rand links/rechts
                 }
 
                 buf = io.BytesIO()
                 code128.write(buf, options=options)
                 buf.seek(0)
 
-                # PIL Bild laden & erweitern für SN unten
+                # PIL Bild laden & erweitern (nur für SN)
                 barcode_img = Image.open(buf).convert('RGB')
-                total_height = barcode_img.height + 120  # Nur Platz für SN
+                total_height = barcode_img.height + 100
                 new_img = Image.new('RGB', (barcode_img.width, total_height), (255, 255, 255))
                 draw = ImageDraw.Draw(new_img)
-                new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 20))
+                new_img.paste(barcode_img, ((new_img.width - barcode_img.width) // 2, 10))
 
-                # Große, klare Schrift für SN
+                # Große Schrift für SN
                 try:
-                    font = ImageFont.truetype("arial.ttf", 36)  # Groß & lesbar
+                    font = ImageFont.truetype("arial.ttf", 48)  # Groß & fett
                 except:
                     font = ImageFont.load_default()
 
-                # Nur Seriennummer zentriert unten
-                sn_text = f"SN: {sn}"
+                sn_text = sn  # Nur die Nummer, ohne "SN:"
                 bbox = draw.textbbox((0, 0), sn_text, font=font)
                 w = bbox[2] - bbox[0]
-                draw.text(((new_img.width - w) // 2, barcode_img.height + 40), sn_text, fill=(0, 0, 0), font=font)
+                draw.text(((new_img.width - w) // 2, barcode_img.height + 20), sn_text, fill=(0, 0, 0), font=font)
 
                 # Finales Bild
                 final_buf = io.BytesIO()
@@ -84,13 +83,13 @@ def index():
                     final_buf,
                     mimetype='image/png',
                     as_attachment=True,
-                    download_name=f'luxe_barcode_{product.replace(" ", "_")[:20]}_{nicotine}mg.png'
+                    download_name=f'luxe_{product.replace(" ", "_")[:15]}_{nicotine}mg.png'
                 )
 
             except Exception as e:
                 return f"Fehler: {str(e)}", 500
 
-    # Startseite – Formular
+    # Startseite – Formular (angepasst)
     return """
 <!DOCTYPE html>
 <html lang="de">
