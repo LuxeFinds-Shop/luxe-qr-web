@@ -1,7 +1,7 @@
 from flask import Flask, request, send_file
 import io
-import qrcode
-from qrcode.constants import ERROR_CORRECT_H
+import barcode
+from barcode.writer import ImageWriter
 import datetime
 
 app = Flask(__name__)
@@ -16,47 +16,44 @@ def index():
         if product and price and nicotine:
             try:
                 price_float = float(price)
-                data = f"""LuxeFinds Vape
-Produkt: {product}
-Preis: €{price_float:.2f}
-Nikotin: {nicotine} mg/ml
-Generiert: {datetime.date.today().strftime('%d.%m.%Y')}"""
+                nicotine_int = int(float(nicotine))  # mg/ml meist ganzzahlig
 
-                qr = qrcode.QRCode(
-                    version=None,
-                    error_correction=ERROR_CORRECT_H,
-                    box_size=10,
-                    border=4,
-                )
-                qr.add_data(data)
-                qr.make(fit=True)
+                # Der Text, der im Barcode kodiert wird (Scanner liest das aus)
+                data = f"LuxeFinds|{product}|€{price_float:.2f}|{nicotine_int}mg/ml|{datetime.date.today().strftime('%d.%m.%Y')}"
 
-                img = qr.make_image(
-                    fill_color=(15, 23, 42),  # Dunkelblau
-                    back_color="white"
-                ).convert("RGB")
+                # Code128 Barcode generieren (alphanumerisch, perfekt für unseren Text)
+                code128 = barcode.get('code128', data, writer=ImageWriter())
 
+                # Optionen: Text unter Barcode anzeigen, Größe anpassen
+                options = {
+                    'write_text': True,          # Menschlich lesbarer Text unten
+                    'text_distance': 5,          # Abstand Text zu Bars
+                    'module_width': 0.4,         # Dicke der Bars (für Scanner gut)
+                    'dpi': 300                   # Hohe Auflösung für Druck/Scan
+                }
+
+                # In Memory speichern (keine Datei auf Server)
                 buf = io.BytesIO()
-                img.save(buf, format="PNG")
+                code128.write(buf, options=options)
                 buf.seek(0)
 
                 return send_file(
                     buf,
                     mimetype='image/png',
                     as_attachment=True,
-                    download_name=f'luxe_{product.replace(" ", "_")[:30]}_{nicotine}mg.png'
+                    download_name=f'luxe_barcode_{product.replace(" ", "_")[:30]}_{nicotine}mg.png'
                 )
             except Exception as e:
-                return f"Fehler: {str(e)} – bitte versuche es nochmal.", 500
+                return f"Fehler beim Generieren: {str(e)} – bitte Daten prüfen.", 500
 
-    # Formular anzeigen
+    # HTML-Formular (angepasst, Hinweis auf Barcode)
     return """
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LuxeFinds QR-Generator</title>
+    <title>LuxeFinds Barcode Generator</title>
     <style>
         body { font-family: system-ui, sans-serif; background:#f8fafc; padding:20px; max-width:500px; margin:auto; }
         h1 { color:#6366f1; text-align:center; }
@@ -64,10 +61,13 @@ Generiert: {datetime.date.today().strftime('%d.%m.%Y')}"""
         input { width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; }
         button { width:100%; background:#6366f1; color:white; border:none; padding:14px; font-size:1.1rem; border-radius:8px; margin-top:16px; cursor:pointer; }
         button:hover { background:#4f46e5; }
+        .hint { color:#64748b; font-size:0.9rem; margin-top:16px; text-align:center; }
     </style>
 </head>
 <body>
-    <h1>LuxeFinds Vape QR-Generator</h1>
+    <h1>LuxeFinds Barcode Generator</h1>
+    <p class="hint">Erzeugt einen scannbaren Code128-Barcode (wie im Supermarkt). Scanner zeigt den gesamten Text an.</p>
+    
     <form method="post">
         <label>Produktname</label>
         <input name="product" required placeholder="z.B. Mango Ice Blast">
@@ -78,7 +78,7 @@ Generiert: {datetime.date.today().strftime('%d.%m.%Y')}"""
         <label>Nikotin (mg/ml)</label>
         <input name="nicotine" type="number" required placeholder="20">
 
-        <button type="submit">QR-Code generieren & herunterladen</button>
+        <button type="submit">Barcode generieren & herunterladen</button>
     </form>
 </body>
 </html>
