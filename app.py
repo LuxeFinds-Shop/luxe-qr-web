@@ -18,21 +18,22 @@ def index():
                 price_float = float(price)
                 nicotine_int = int(float(nicotine))  # mg/ml meist ganzzahlig
 
-                # Der Text, der im Barcode kodiert wird (Scanner liest das aus)
-                data = f"LuxeFinds|{product}|€{price_float:.2f}|{nicotine_int}mg/ml|{datetime.date.today().strftime('%d.%m.%Y')}"
+                # Text für den Barcode – mit "CHF " statt Symbol
+                data = f"LuxeFinds|{product}|CHF {price_float:.2f}|{nicotine_int}mg/ml|{datetime.date.today().strftime('%d.%m.%Y')}"
 
-                # Code128 Barcode generieren (alphanumerisch, perfekt für unseren Text)
+                # Code128 Barcode generieren
                 code128 = barcode.get('code128', data, writer=ImageWriter())
 
-                # Optionen: Text unter Barcode anzeigen, Größe anpassen
+                # Barcode-Optionen (für gute Lesbarkeit und Scannbarkeit)
                 options = {
                     'write_text': True,          # Menschlich lesbarer Text unten
                     'text_distance': 5,          # Abstand Text zu Bars
-                    'module_width': 0.4,         # Dicke der Bars (für Scanner gut)
-                    'dpi': 300                   # Hohe Auflösung für Druck/Scan
+                    'module_width': 0.4,         # Dicke der Bars (gut für Scanner)
+                    'dpi': 300,                  # Hohe Auflösung
+                    'quiet_zone': 10             # Rand links/rechts
                 }
 
-                # In Memory speichern (keine Datei auf Server)
+                # In Memory speichern
                 buf = io.BytesIO()
                 code128.write(buf, options=options)
                 buf.seek(0)
@@ -46,7 +47,7 @@ def index():
             except Exception as e:
                 return f"Fehler beim Generieren: {str(e)} – bitte Daten prüfen.", 500
 
-    # HTML-Formular (angepasst, Hinweis auf Barcode)
+    # HTML-Formular mit Schweiz-Hinweis
     return """
 <!DOCTYPE html>
 <html lang="de">
@@ -62,17 +63,18 @@ def index():
         button { width:100%; background:#6366f1; color:white; border:none; padding:14px; font-size:1.1rem; border-radius:8px; margin-top:16px; cursor:pointer; }
         button:hover { background:#4f46e5; }
         .hint { color:#64748b; font-size:0.9rem; margin-top:16px; text-align:center; }
+        .info { background:#e0f2fe; padding:12px; border-radius:8px; margin-top:20px; font-size:0.95rem; }
     </style>
 </head>
 <body>
     <h1>LuxeFinds Barcode Generator</h1>
-    <p class="hint">Erzeugt einen scannbaren Code128-Barcode (wie im Supermarkt). Scanner zeigt den gesamten Text an.</p>
+    <p class="hint">Erzeugt einen scannbaren Code128-Barcode (ideal für Scanner in CH).</p>
     
     <form method="post">
         <label>Produktname</label>
         <input name="product" required placeholder="z.B. Mango Ice Blast">
 
-        <label>Preis (€)</label>
+        <label>Preis (CHF)</label>
         <input name="price" type="number" step="0.01" required placeholder="19.90">
 
         <label>Nikotin (mg/ml)</label>
@@ -80,6 +82,11 @@ def index():
 
         <button type="submit">Barcode generieren & herunterladen</button>
     </form>
+
+    <div class="info">
+        Der Barcode enthält: LuxeFinds | Produkt | CHF Preis | Nikotin | Datum<br>
+        Scanner zeigt den vollen Text an (z. B. LuxeFinds|Mango Ice Blast|CHF 19.90|20mg/ml|13.02.2026)
+    </div>
 </body>
 </html>
     """
